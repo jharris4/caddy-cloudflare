@@ -1,0 +1,4 @@
+.DS_Store
+
+# the entrypoint reads the token from a file at runtime -- never commit one
+cloudflare_api_token

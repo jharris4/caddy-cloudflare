@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The tag is the Caddy version, optionally with a -rN suffix for a
+      # rebuild of the same Caddy version (a plugin bump, say). It has to
+      # agree with CADDY_VERSION in the Dockerfile, or the published tag
+      # would claim a Caddy version the image does not contain.
+      - name: Derive the version from the tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?$'; then
+            echo "Tag $GITHUB_REF_NAME is not vX.Y.Z or vX.Y.Z-rN" >&2
+            exit 1
+          fi
+          caddy_version=$(sed -n 's/^ARG CADDY_VERSION=//p' Dockerfile)
+          if [ "${version%-r*}" != "$caddy_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match CADDY_VERSION=$caddy_version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # the secondary host is arm64 and the primary amd64, so the image has
+      # to carry both manifests. The Dockerfile cross-compiles, so no QEMU.
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # only the exact version is pushed. There is deliberately no :latest --
+      # a compose file pointing at a floating tag gets whatever was built most
+      # recently, which is not a thing you want in front of every service.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}

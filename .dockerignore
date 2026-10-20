@@ -1,0 +1,4 @@
+# The image needs the Dockerfile and docker-entrypoint.sh, and nothing else.
+.git/
+.github/
+.DS_Store
